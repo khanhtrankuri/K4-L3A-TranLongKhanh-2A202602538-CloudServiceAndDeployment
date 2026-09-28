@@ -28,32 +28,54 @@ class RateLimiter:
         return f"ratelimit:{user_id}"
 
     def hit_count(self, user_id: str, now: float | None = None) -> int:
-        """Số request của user trong ``WINDOW_SECONDS`` giây gần nhất.
+        """Số request của user trong WINDOW_SECONDS giây gần nhất."""
 
-        TODO (CP3):
-          1. ``now = now if now is not None else time.time()``
-          2. Xóa các entry cũ hơn cửa sổ:
-             ``self.client.zremrangebyscore(key, 0, now - WINDOW_SECONDS)``
-          3. Trả về ``self.client.zcard(key)``
-        """
-        raise NotImplementedError("TODO (CP3): cài đặt hit_count")
+        now = now if now is not None else time.time()
+
+        key = self._key(user_id)
+
+        # Xóa các request đã nằm ngoài cửa sổ 60 giây
+        self.client.zremrangebyscore(
+            key,
+            0,
+            now - WINDOW_SECONDS,
+        )
+
+        # Đếm số request còn lại
+        return self.client.zcard(key)
 
     def check(self, user_id: str, now: float | None = None) -> None:
-        """Cho qua nếu còn quota, ngược lại raise 429.
+        """Cho qua nếu còn quota, ngược lại raise 429."""
 
-        TODO (CP3):
-          1. ``now = now if now is not None else time.time()``
-          2. Gọi ``self.hit_count(user_id, now)``.
-          3. Nếu số đó ``>= self.limit`` → raise
-             ``HTTPException(status_code=429, detail="rate limit exceeded",
-                             headers={"Retry-After": str(WINDOW_SECONDS)})``
-          4. Chưa vượt → ghi nhận request này:
-             ``self.client.zadd(key, {f"{now}:{uuid.uuid4().hex}": now})``
-             (member phải là chuỗi DUY NHẤT, nếu không hai request cùng
-             timestamp sẽ ghi đè nhau và bạn đếm thiếu)
-             rồi ``self.client.expire(key, WINDOW_SECONDS)`` để key tự dọn.
+        now = now if now is not None else time.time()
 
-        Lưu ý thứ tự: **kiểm tra trước, ghi nhận sau**. Ghi trước rồi mới đếm
-        sẽ chặn nhầm ngay ở request thứ ``limit``.
-        """
-        raise NotImplementedError("TODO (CP3): cài đặt check")
+        key = self._key(user_id)
+
+        # Đếm số request trong 60 giây gần nhất
+        count = self.hit_count(user_id, now)
+
+        # Đã đạt giới hạn
+        if count >= self.limit:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="rate limit exceeded",
+                headers={
+                    "Retry-After": str(WINDOW_SECONDS),
+                },
+            )
+
+        # Chưa vượt giới hạn → ghi nhận request hiện tại
+        member = f"{now}:{uuid.uuid4().hex}"
+
+        self.client.zadd(
+            key,
+            {
+                member: now,
+            },
+        )
+
+        # Tự xóa key nếu user không request thêm trong 60 giây
+        self.client.expire(
+            key,
+            WINDOW_SECONDS,
+        )
