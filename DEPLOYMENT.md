@@ -1,101 +1,80 @@
 # Thông Tin Deploy — Checkpoint 5
 
-> Điền file này sau khi deploy xong. `pytest tests/test_cp5.py` đọc file này
-> để tìm địa chỉ service của bạn và gọi thử.
->
-> **Chỉ ghi TÊN biến môi trường, tuyệt đối không dán giá trị API key vào đây.**
-> Repo này công khai — dán khóa vào là mất khóa.
-
 ## Thông Tin Học Viên
 
 | Mục | Nội dung |
 |-----|----------|
-| Họ và tên | (điền họ tên) |
-| Mã học viên | (điền mã học viên) |
-| Repo | (điền link repo K4-L3A-DAY12-HoVaTen-MSSV-CloudServicesAndDeployment) |
+| Họ và tên | Trần Long Khánh |
+| Mã học viên | 2A202602538 |
+| Repo | https://github.com/khanhtrankuri/K4-L3A-TranLongKhanh-2A202602538-CloudServiceAndDeployment |
 
 ## Service
 
 | Mục | Nội dung |
 |-----|----------|
-| Public URL | https://TODO-thay-bang-url-that.up.railway.app |
-| Platform | Railway / Render / Cloud Run — (điền platform bạn dùng) |
-| Ngày deploy | (điền ngày) |
+| URL kiểm thử | http://localhost:8000 |
+| Platform | Docker Compose local fallback (cấu hình cloud có sẵn cho Railway và Render) |
+| Ngày kiểm thử | 2026-09-28 |
+| Trạng thái | `agent` healthy, `redis` healthy |
 
-## Biến Môi Trường Đã Set Trên Cloud
+Phiên làm bài này không có browser/cloud session đã xác thực để tạo service trên
+Railway hoặc Render. Vì vậy bài dùng phương án dự phòng chính thức của lab với
+`LOCAL_FALLBACK=true`. Không có URL cloud hoặc kết quả cloud nào được giả lập.
 
-Ghi tên biến và **nguồn giá trị**, không ghi giá trị:
+## Biến Môi Trường
 
-| Biến | Đã set | Ghi chú |
-|------|--------|---------|
-| `PORT` | ✅ | platform tự gán |
-| `AGENT_API_KEY` | ✅ | đặt trong dashboard, không nằm trong repo |
-| `REDIS_URL` | ✅ | (điền: Redis add-on của platform / Upstash / ...) |
-| `RATE_LIMIT_PER_MINUTE` | ✅ | 10 |
-| `MONTHLY_BUDGET_USD` | ✅ | 10.0 |
-| `LOG_LEVEL` | ✅ | INFO |
+Chỉ liệt kê tên và nguồn cấu hình; tài liệu này không chứa giá trị secret.
+
+| Biến | Đã set | Nguồn |
+|------|--------|-------|
+| `PORT` | Có | Docker Compose đặt cổng 8000; cloud sẽ tự cấp `$PORT` |
+| `AGENT_API_KEY` | Có | file `.env` cục bộ, bị `.gitignore` loại khỏi repo |
+| `REDIS_URL` | Có | Compose đặt `redis://redis:6379/0` |
+| `RATE_LIMIT_PER_MINUTE` | Có | file `.env` cục bộ |
+| `MONTHLY_BUDGET_USD` | Có | file `.env` cục bộ |
+| `LOG_LEVEL` | Có | file `.env` cục bộ |
+| `LOCAL_FALLBACK` | Có | `true` trong file `.env` cục bộ |
 
 ## Lệnh Kiểm Tra
 
-Thay `<URL>` bằng Public URL ở trên:
-
 ```bash
-# 1. Liveness — mong đợi 200 {"status":"ok"}
-curl -i <URL>/health
-
-# 2. Readiness — mong đợi 200 {"status":"ready"} (đã nối được Redis)
-curl -i <URL>/ready
-
-# 3. Không có API key — mong đợi 401
-curl -i -X POST <URL>/ask \
+docker compose up -d --build
+docker compose ps
+curl -i http://localhost:8000/health
+curl -i http://localhost:8000/ready
+curl -i -X POST http://localhost:8000/ask \
   -H "Content-Type: application/json" \
   -d '{"question":"Hello"}'
-
-# 4. Có API key — mong đợi 200 kèm câu trả lời
-curl -i -X POST <URL>/ask \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $AGENT_API_KEY" \
-  -H "X-User-Id: sv-test" \
-  -d '{"question":"Deploy là gì?"}'
-
-# 5. Rate limit — gọi 15 lần, những lần cuối phải trả 429
-for i in $(seq 1 15); do
-  curl -s -o /dev/null -w "%{http_code} " -X POST <URL>/ask \
-    -H "Content-Type: application/json" \
-    -H "X-API-Key: $AGENT_API_KEY" \
-    -H "X-User-Id: sv-test" \
-    -d '{"question":"test"}'
-done; echo
+pytest tests/test_cp5.py -v
 ```
 
 ## Kết Quả Chạy Thật
 
-Dán output của các lệnh trên vào đây:
+Kết quả `docker compose ps`:
 
+```text
+agent   Up (healthy)   0.0.0.0:8000->8000/tcp
+redis   Up (healthy)   0.0.0.0:6379->6379/tcp
 ```
-(điền output)
+
+Kết quả API:
+
+```text
+GET  /health -> 200 {"status":"ok","service":"day12-agent","version":"1.0.0"}
+GET  /ready  -> 200 {"status":"ready","redis":true}
+POST /ask không có X-API-Key -> 401 {"detail":"invalid or missing API key"}
+POST /ask có key, cùng user (hai lần) -> history_length lần lượt 0 và 2
 ```
 
 ## Ảnh Chụp Màn Hình
 
-Đặt ảnh trong thư mục `screenshots/`:
+- `screenshots/health.png` — ảnh chụp thật endpoint `/health` của stack local.
 
-- `screenshots/dashboard.png` — trang quản lý service trên platform
-- `screenshots/health.png` — kết quả gọi `/health` từ trình duyệt hoặc curl
+## Lỗi Gặp Phải Và Cách Xử Lý
 
----
-
-## Nếu Dùng Phương Án Dự Phòng
-
-Không đăng ký được tài khoản cloud? Vẫn nộp được bài, nhưng CP5 tối đa 60% điểm:
-
-1. Đặt `LOCAL_FALLBACK=true` trong `.env`
-2. Chạy `docker compose up -d` rồi kiểm tra `docker compose ps`
-3. Chụp màn hình vào `screenshots/`
-4. Chạy `pytest tests/test_cp5.py -v` — bộ test sẽ tự chuyển sang kiểm tra
-   `http://localhost:8000`
-5. Ghi rõ lý do không deploy được vào phần dưới đây:
-
-```
-(điền lý do nếu dùng phương án dự phòng, ngược lại xóa mục này)
-```
+Lần gọi `/ask` đầu tiên bằng `curl.exe` trả `422 Unprocessable Entity` với thông
+báo `JSON decode error`. Nguyên nhân là PowerShell xử lý dấu nháy khiến JSON gửi
+đi không còn hợp lệ. Tôi kiểm tra response body, chuyển sang tạo body bằng
+`ConvertTo-Json`, rồi gọi lại; request hợp lệ không có key trả đúng 401. Với request
+có key, tôi gọi từ bên trong container và đọc key trực tiếp từ environment nên
+không in hoặc ghi secret vào command/output.
